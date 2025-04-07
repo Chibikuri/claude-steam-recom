@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steam ゲームレコメンダー</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            color: #171a21;
+        }
+        
+        .chat-container {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .messages {
+            height: 400px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        
+        .user-message {
+            background-color: #dcf8c6;
+            margin-left: 20%;
+        }
+        
+        .assistant-message {
+            background-color: #f1f0f0;
+            margin-right: 20%;
+        }
+        
+        .input-container {
+            display: flex;
+        }
+        
+        input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        
+        button {
+            background-color: #1a9fff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            margin-left: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        button:hover {
+            background-color: #0d8ae6;
+        }
+        
+        .recommendations {
+            margin-top: 30px;
+        }
+        
+        .game-recommendation {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .game-recommendation h3 {
+            margin-top: 0;
+            color: #171a21;
+        }
+        
+        .game-info {
+            display: flex;
+            align-items: flex-start;
+        }
+        
+        .game-image {
+            width: 120px;
+            height: 45px;
+            background-color: #ddd;
+            margin-right: 15px;
+            object-fit: cover;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+            color: #666;
+        }
+
+        .get-recommendations {
+            background-color: #171a21;
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin-top: 20px;
+            font-size: 18px;
+        }
+        
+        .restart {
+            background-color: #666;
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Steam ゲームレコメンダー</h1>
+        <p>あなたの好みに合わせて、Steamのゲームをおすすめします</p>
+    </header>
+    
+    <div class="chat-container">
+        <div class="messages" id="messages">
+            <!-- Messages will be displayed here -->
+        </div>
+        
+        <div class="input-container">
+            <input 
+                type="text" 
+                id="userInput" 
+                placeholder="あなたの好みや探しているゲームについて教えてください..." 
+                autofocus
+            >
+            <button onclick="sendMessage()">送信</button>
+        </div>
+        
+        <button id="getRecommendationsBtn" class="get-recommendations" onclick="getRecommendations()" disabled>
+            ゲームをおすすめする
+        </button>
+        
+        <button class="restart" onclick="restartConversation()">
+            会話をリセット
+        </button>
+    </div>
+    
+    <div class="recommendations" id="recommendationsContainer" style="display: none;">
+        <h2>おすすめのゲーム</h2>
+        <div id="recommendations">
+            <!-- Recommendations will be displayed here -->
+        </div>
+    </div>
+    
+    <script>
+        // Store conversation history
+        let messages = [];
+        let userPreferences = {};
+        
+        // Initialize with a welcome message
+        window.onload = function() {
+            addMessage({
+                role: 'assistant',
+                content: 'こんにちは！あなたに合ったSteamのゲームを見つけるためのお手伝いをします。いくつか質問をさせてください。まずは、どんなジャンルのゲームが好きですか？（RPG、FPS、ストラテジー、アドベンチャーなど）'
+            });
+            
+            // Add event listener for Enter key
+            document.getElementById('userInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        };
+        
+        // Send message to Claude API
+        async function sendMessage() {
+            const userInput = document.getElementById('userInput');
+            const userMessage = userInput.value.trim();
+            
+            if (!userMessage) return;
+            
+            // Add user message to chat
+            addMessage({
+                role: 'user',
+                content: userMessage
+            });
+            
+            userInput.value = '';
+            
+            // Add loading indicator
+            const loadingId = showLoading();
+            
+            try {
+                // Call our backend API which will communicate with Claude
+                const response = await fetch('/api/claude/conversation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        messages: messages,
+                        userPreferences: userPreferences
+                    }),
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Add Claude's response to chat
+                    addMessage({
+                        role: 'assistant',
+                        content: data.response
+                    });
+                    
+                    // Update preferences (in a real app, you would extract preferences from the conversation)
+                    updatePreferences(userMessage);
+                    
+                    // Enable the recommend button after a few interactions
+                    if (messages.filter(msg => msg.role === 'user').length >= 3) {
+                        document.getElementById('getRecommendationsBtn').disabled = false;
+                    }
+                } else {
+                    addMessage({
+                        role: 'assistant',
+                        content: 'すみません、エラーが発生しました。もう一度お試しください。'
+                    });
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                addMessage({
+                    role: 'assistant',
+                    content: 'すみません、サーバーとの通信でエラーが発生しました。'
+                });
+            } finally {
+                // Remove loading indicator
+                hideLoading(loadingId);
+            }
+        }
+        
+        // Add message to the chat
+        function addMessage(message) {
+            messages.push(message);
+            
+            const messagesContainer = document.getElementById('messages');
+            const messageElement = document.createElement('div');
+            
+            messageElement.classList.add('message');
+            messageElement.classList.add(message.role === 'user' ? 'user-message' : 'assistant-message');
+            messageElement.textContent = message.content;
+            
+            messagesContainer.appendChild(messageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        // Update user preferences based on their responses
+        function updatePreferences(userMessage) {
+            // In a real application, you would use NLP or Claude to extract preferences
+            // This is a simplified version for demonstration
+            
+            const genres = ['RPG', 'FPS', 'ストラテジー', 'アクション', 'アドベンチャー', 'シミュレーション'];
+            const platforms = ['PC', 'Mac', 'Linux', 'SteamDeck'];
+            
+            // Check for genres
+            genres.forEach(genre => {
+                if (userMessage.includes(genre)) {
+                    if (!userPreferences.genres) userPreferences.genres = [];
+                    if (!userPreferences.genres.includes(genre)) {
+                        userPreferences.genres.push(genre);
+                    }
+                }
+            });
+            
+            // Check for platforms
+            platforms.forEach(platform => {
+                if (userMessage.includes(platform)) {
+                    userPreferences.platform = platform;
+                }
+            });
+            
+            // Check for multiplayer preference
+            if (userMessage.includes('マルチプレイヤー') || userMessage.includes('マルチ')) {
+                userPreferences.multiplayer = true;
+            }
+            if (userMessage.includes('シングルプレイヤー') || userMessage.includes('シングル')) {
+                userPreferences.singleplayer = true;
+            }
+            
+            console.log('Updated preferences:', userPreferences);
+        }
+        
+        // Get game recommendations
+        async function getRecommendations() {
+            document.getElementById('getRecommendationsBtn').disabled = true;
+            
+            // Show loading in recommendations section
+            document.getElementById('recommendationsContainer').style.display = 'block';
+            document.getElementById('recommendations').innerHTML = '<div class="loading">おすすめのゲームを検索中...</div>';
+            
+            try {
+                const response = await fetch('/api/recommend', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        userPreferences: userPreferences
+                    }),
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayRecommendations(data.recommendations);
+                } else {
+                    document.getElementById('recommendations').innerHTML = 
+                        '<div class="error">おすすめの取得中にエラーが発生しました。もう一度お試しください。</div>';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('recommendations').innerHTML = 
+                    '<div class="error">サーバーとの通信でエラーが発生しました。</div>';
+            } finally {
+                document.getElementById('getRecommendationsBtn').disabled = false;
+            }
+        }
+        
+        // Display game recommendations
+        function displayRecommendations(recommendations) {
+            const container = document.getElementById('recommendations');
+            container.innerHTML = '';
+            
+            if (!recommendations || recommendations.length === 0) {
+                container.innerHTML = '<div class="error">おすすめのゲームが見つかりませんでした。条件を変更してもう一度お試しください。</div>';
+                return;
+            }
+            
+            recommendations.forEach(game => {
+                const gameElement = document.createElement('div');
+                gameElement.classList.add('game-recommendation');
+                
+                gameElement.innerHTML = `
+                    <h3>${game.title}</h3>
+                    <div class="game-info">
+                        <img src="/api/placeholder/120/45" alt="${game.title}" class="game-image">
+                        <div>
+                            <p><strong>ジャンル:</strong> ${game.genre}</p>
+                            <p>${game.reason}</p>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(gameElement);
+            });
+        }
+        
+        // Show loading indicator
+        function showLoading() {
+            const loadingId = 'loading-' + Date.now();
+            const messagesContainer = document.getElementById('messages');
+            const loadingElement = document.createElement('div');
+            
+            loadingElement.id = loadingId;
+            loadingElement.classList.add('message', 'assistant-message', 'loading');
+            loadingElement.textContent = '考え中...';
+            
+            messagesContainer.appendChild(loadingElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            
+            return loadingId;
+        }
+        
+        // Hide loading indicator
+        function hideLoading(loadingId) {
+            const loadingElement = document.getElementById(loadingId);
+            if (loadingElement) {
+                loadingElement.remove();
+            }
+        }
+        
+        // Restart conversation
+        function restartConversation() {
+            messages = [];
+            userPreferences = {};
+            document.getElementById('messages').innerHTML = '';
+            document.getElementById('recommendationsContainer').style.display = 'none';
+            document.getElementById('getRecommendationsBtn').disabled = true;
+            
+            addMessage({
+                role: 'assistant',
+                content: 'こんにちは！あなたに合ったSteamのゲームを見つけるためのお手伝いをします。いくつか質問をさせてください。まずは、どんなジャンルのゲームが好きですか？（RPG、FPS、ストラテジー、アドベンチャーなど）'
+            });
+        }
+    </script>
+</body>
+</html>
